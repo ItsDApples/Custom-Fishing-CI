@@ -37,4 +37,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Output Files
-          path: build/libs/*.jar
+          path: target/*.jar
