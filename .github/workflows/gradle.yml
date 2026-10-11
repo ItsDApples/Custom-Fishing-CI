@@ -1,16 +1,19 @@
 name: Build
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - '**/*.kt'
       - '**/*.kts'
+      - '.github/workflows/**'
   push:
     branches:
       - master
     paths:
       - '**/*.kt'
       - '**/*.kts'
+      - '.github/workflows/**'
   workflow_dispatch:
 
 concurrency:
@@ -22,9 +25,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Set up JDK 25
         uses: actions/setup-java@v4
@@ -35,14 +42,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # 防止文件权限变化导致 git 认为工作区脏
+      - name: Ignore file mode changes
+        run: git config core.fileMode false
 
+      # 可选：打印 git 信息，方便定位 build.gradle.kts:41 的 git 命令
+      - name: Show git info
+        run: |
+          git status --short
+          git log --oneline -5
+          git describe --tags --always --dirty
+
+      # 不再 chmod +x，直接使用 bash 执行 wrapper，避免修改工作区
       - name: Build
-        run: ./gradlew build --full-stacktrace
+        run: bash ./gradlew build --full-stacktrace
 
-      # 上传构建产物（jar / aar / zip / war 等），作为可下载 artifact
       - name: Upload build artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ github.sha }}
@@ -54,7 +70,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # 可选：测试报告（失败时也上传，方便排查）
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
