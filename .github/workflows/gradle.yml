@@ -27,9 +27,6 @@ jobs:
       contents: read
 
     steps:
-      # 1. 关键：PR 下 checkout 会进入 detached HEAD，
-      #    git symbolic-ref / git describe 之类的命令就会返回非 0。
-      #    显式指定 ref 让它检出到真正的分支。
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -37,29 +34,32 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # 2. 把 git 环境准备好，避免 build.gradle.kts:41 报错。
       - name: Prepare git repository
         run: |
           set -x
 
-          # 防止文件权限变化把工作区弄脏（git diff --quiet 会返回 1）
+          # 防止权限变化把工作区弄脏
           git config core.fileMode false
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-          # 强制同步 tags，确保 git describe 能找到 tag
+          # CI 里没有 git 身份，打 tag / commit 会失败，先配置好
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 同步远端 tags
           git fetch --tags --force --prune origin || true
 
-          # 如果整个仓库一个 tag 都没有，git describe 会直接以退出码 1 失败。
-          # 这里在 HEAD 上打一个本地 fallback tag，让 describe 至少能返回东西。
+          # 如果仓库一个 tag 都没有，git describe 会以退出码 1 失败。
+          # 在 HEAD 上打一个轻量 tag 作为兜底。
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found, creating fallback tag v0.0.0"
-            git tag -a v0.0.0 -m "CI fallback tag" HEAD
+            git tag v0.0.0 HEAD
           fi
 
-          # 明确切到分支（防止 detached HEAD 造成 symbolic-ref 失败）
+          # 明确切到分支，防止 detached HEAD 造成 symbolic-ref 失败
           git checkout -B ci-build || true
 
-          # 打印所有 build.gradle.kts 里可能会用到的 git 命令，方便定位
+          # 打印所有 build.gradle.kts 里可能用到的 git 命令，方便定位
           echo "===== git status --short ====="
           git status --short
           echo "===== git rev-parse --abbrev-ref HEAD ====="
@@ -86,7 +86,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 3. 直接 bash 执行 wrapper，避免 chmod 修改工作区
       - name: Build
         run: bash ./gradlew build --full-stacktrace
 
